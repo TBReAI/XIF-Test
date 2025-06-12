@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-
+#include <xif_client.h>
 
 void render();
 void refresh_callback(GLFWwindow* window);
@@ -20,10 +20,46 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 float slider = 0.5f;
 bool button_pressed = false;
-        
+
+GLuint image_texture = 0;
+bool has_image = false;
+int width;
+int height;
+
+void timestep_callback(uint64_t time)
+{
+    printf("Timestep callback called at time: %llu\n", time);
+}
+
+void image_callback(const xif_image_t* image)
+{
+    printf("Image callback called with image: %p\n", (void*)image);
+    // Here you would typically process the image data, e.g., display it in the UI.
+    width = image->width;
+    height = image->height;
+
+    // Upload pixels into texture
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    if (image->channels == 3)
+    {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image->width, image->height, 0, GL_RGB, GL_UNSIGNED_BYTE, image->data);
+        has_image = true;
+    }
+    else if (image->channels == 4)
+    {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image->width, image->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image->data);
+        has_image = true;
+    }
+
+}
 
 int main() 
 {
+    xifc_init();
+
+    xifc_set_timestep_callback(timestep_callback);
+    xifc_set_image_callback(image_callback);
+
     if (!glfwInit())
     {
         exit(EXIT_FAILURE);
@@ -39,7 +75,15 @@ int main()
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetWindowRefreshCallback(window, refresh_callback);
 
-    
+
+    glGenTextures(1, &image_texture);
+    glBindTexture(GL_TEXTURE_2D, image_texture);
+
+    // Setup filtering parameters for display
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -49,6 +93,8 @@ int main()
 
     while (!glfwWindowShouldClose(window)) 
     {
+        xifc_update();
+
         glfwPollEvents();
         render();
         glfwSwapBuffers(window);
@@ -136,6 +182,11 @@ void render()
 
     ImGui::Begin("Image Viewer");
     ImGui::Text("Bitmap goes here");
+    if (has_image)
+    {
+        ImGui::Image((ImTextureID)(intptr_t)image_texture, ImVec2(width, height));
+    }
+
     ImGui::End();
 
     ImGui::Render();
